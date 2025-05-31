@@ -1,4 +1,4 @@
-# 🎧 Extracción de Embeddings para Análisis de Emociones en Voz
+# 🎧 Análisis de Voz para visualizacion emocional
 
 ## 📌 Descripción general
 
