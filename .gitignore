@@ -1,0 +1,48 @@
+# Archivos Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Entornos virtuales
+env/
+venv310/
+.venv/
+ENV/
+.ENV/
+*.env
+*.venv
+.Python
+
+# Archivos temporales y de sistema
+.ipynb_checkpoints/
+*.log
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+
+# Pyenv
+.python-version
+
+# Archivos de VSCode
+.vscode/
+
+# Archivos generados por el proyecto
+*.npy
+*.pt
+*.ckpt
+*.bin
+embeddings/
+outputs/
+logs/
+
+# Datos grandes y sensibles
+IEMOCAP_full_release/
+
+# Cachés de modelos y huggingface
+.cache/
+hub/

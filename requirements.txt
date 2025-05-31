@@ -1,0 +1,9 @@
+torch>=1.10
+transformers>=4.30
+torchaudio>=0.10
+soundfile
+scikit-learn
+pandas
+matplotlib
+seaborn
+tqdm
