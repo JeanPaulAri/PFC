@@ -1,53 +1,54 @@
-"""
-    extract_emotion2vec_embeddings.py
-
-    Este script recorre los archivos de audio del dataset IEMOCAP y extrae embeddings
-    utilizando el modelo preentrenado emotion2vec (emotion2vec/emotion2vec_base) disponible en Hugging Face.
-
-    Los embeddings se almacenan como archivos .npy en la carpeta embeddings/emotion2vec.
-
-    Requiere:
-    - IEMOCAP descargado y organizado correctamente
-    - config.py con la ruta a IEMOCAP
-    - extractor definido en extractors/emotion2vec_extractor.py
-
-    Uso:
-        python scripts/extract_emotion2vec_embeddings.py
-"""
-import os
+#!/usr/bin/env python
 import numpy as np
 from tqdm import tqdm
+from pathlib import Path
 import soundfile as sf
 
+import config
 from utils.dataset_loader import load_iemocap_metadata
-from extractors.emotion2vec_extractor import Emotion2VecExtractorLoacal as Emotion2VecExtractor
+from extractors import get_extractor
 
-OUTPUT_DIR = "embeddings/emotion2vec"
 
 def main():
+    """
+    Extrae embeddings de emotion2vec para todo IEMOCAP y guarda:
+      - embeddings/all_e2v_emb.npy
+      - embeddings/all_labels.npy
+    """
+    # Inicializa extractor (usa ModelScope internamente)
+    extractor = get_extractor("emotion2vec")
+
+    # Carga metadata
     df = load_iemocap_metadata()
-    if df.empty:
-        print("[ERROR] No se encontraron muestras con las emociones seleccionadas.")
-        return
-    
-    extractor = Emotion2VecExtractor()
+    N  = len(df)
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    # Prealoca arrays
+    all_embs   = np.zeros((N, config.EMB_DIM), dtype=np.float32)
+    all_labels = []
 
-    for _, row in tqdm(df.iterrows(), total=len(df)):
-        audio_path = row["path"]
-        utt_id = os.path.splitext(os.path.basename(audio_path))[0]
-        out_path = os.path.join(OUTPUT_DIR, utt_id + ".npy")
+    paths  = df['path'].tolist()
+    labels = df['label'].tolist()
 
-        if not os.path.exists(audio_path):
-            print(f"[WARN] No se encontro el audio: {audio_path}")
-            continue
+    # Extracción por batches
+    for start in tqdm(range(0, N, config.BATCH_SIZE), desc="e2v-extract"):
+        batch_paths  = paths[start:start+config.BATCH_SIZE]
+        batch_labels = labels[start:start+config.BATCH_SIZE]
 
-        try:
-            embedding = extractor.extract(audio_path)
-            np.save(out_path, embedding.cpu().numpy())
-        except Exception as e:
-            print(f"[ERROR] {utt_id}: {e}")
+        # Llamada al extractor por lote
+        batch_embs = extractor.extract_batch(batch_paths)
+        bs = batch_embs.shape[0]
+
+        all_embs[start:start+bs] = batch_embs
+        all_labels.extend(batch_labels)
+
+    # Guarda resultados
+    out_dir = config.OUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    np.save(out_dir / "all_e2v_emb.npy", all_embs)
+    np.save(out_dir / "all_labels.npy",  np.array(all_labels))
+
+    print(f"[Done] Guardados {N} embeddings de emotion2vec en '{out_dir}'")
+
 
 if __name__ == "__main__":
     main()

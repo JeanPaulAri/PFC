@@ -46,3 +46,6 @@ IEMOCAP_full_release/
 # Cachés de modelos y huggingface
 .cache/
 hub/
+
+#entrenamiento
+ft_w2v2/

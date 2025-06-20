@@ -21,14 +21,26 @@
 """
 
 import os
+
 import numpy as np
-from tqdm import tqdm
+import torch
 import soundfile as sf
 
-from utils.dataset_loader import load_iemocap_metadata
-from extractors.wav2vec2_extractor import Wav2Vec2Extractor
+from tqdm import tqdm
+from pathlib import Path
 
-OUTPUT_DIR = "embeddings/wav2vec2"
+from config import (
+    DATA_ROOT,
+    OUT_DIR,
+    SAMPLE_RATE,
+    BATCH_SIZE,
+    SEED,
+    EMB_DIM,
+)
+
+from utils.dataset_loader import load_iemocap_metadata
+from extractors import get_extractor
+
 
 def main():
     """
@@ -36,30 +48,49 @@ def main():
         Recorre los archivos de audio del dataset IEMOCAP y guarda los embeddings
         en formato .npy en el directorio OUTPUT_DIR.
     """
+
+    # 1) Prepara GPU/CPU y el extractor
+    device    = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    extractor = get_extractor("w2v2", device)
+    torch.manual_seed(SEED)
+
+
+     # 2) Carga metadata (path, label, session…)
     df = load_iemocap_metadata()
     if df.empty:
         print("[ERROR] No se encontraron muestras con las emociones seleccionadas.")
         return
+    
+    N  = len(df)
 
-    extractor = Wav2Vec2Extractor()
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    # 3) Inicializa contenedores
+    all_embs   = np.zeros((N, EMB_DIM), dtype=np.float32)  # (N,768)
+    all_labels = []
 
-    for _, row in tqdm(df.iterrows(), total=len(df)):
-        audio_path = row["path"]
-        utt_id = os.path.splitext(os.path.basename(audio_path))[0]
-        out_path = os.path.join(OUTPUT_DIR, utt_id + ".npy")
+    # 4) Recorre en bloques para aprovechar la GPU sin saturar
+    for start in range(0, N, BATCH_SIZE):
+        end     = min(start + BATCH_SIZE, N)
+        batch   = df.iloc[start:end]
+        speeches, srs, labels = [], [], []
 
-        if not os.path.exists(audio_path):
-            print(f"[WARN] No se encontro el audio: {audio_path}")
-            continue
+        for _, row in batch.iterrows():
+            speech, sr = sf.read(row["path"])
+            speeches.append(speech)
+            srs.append(sr)
+            labels.append(row["label"])
 
-        try:
-            embedding = extractor.extract(audio_path)
-            np.save(out_path, embedding.cpu().numpy())
-        except Exception as e:
-            print(f"[ERROR] {utt_id}: {e}")
+        # extrae lote (shape = (B, 768))
+        batch_emb = extractor.extract_batch(speeches, srs)
 
+        bs = batch_emb.shape[0]
+        all_embs[start:start+bs] = batch_emb
+        all_labels.extend(labels)
+    # 5) Guarda artefactos
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    np.save(OUT_DIR / "all_w2v2_emb.npy", all_embs)
+    np.save(OUT_DIR / "all_labels.npy",   np.array(all_labels))
 
+    print(f"[Done] Guardados {all_embs.shape[0]} embeddings de wav2vec2 en '{OUT_DIR}'")
 
 if __name__ == "__main__":
     main()

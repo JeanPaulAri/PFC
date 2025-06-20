@@ -1,56 +1,81 @@
-"""
-emotion2vec_extractor_local.py
+# extractors/emotion2vec_extractor.py
 
-Este modulo define una clase que permite cargar el modelo emotion2vec_base
-desde Hugging Face usando Wav2Vec2Model y extraer embeddings de archivos WAV
-sin depender de FeatureExtractor ni Processor.
-"""
+from modelscope.pipelines import pipeline
+from modelscope.utils.constant import Tasks
+import numpy as np
 
-import torch
-import torchaudio
-from transformers import Wav2Vec2Model, Wav2Vec2Config
-
-
-class Emotion2VecExtractorLocal:
+class Emotion2VecExtractor:
     """
-    Extrae embeddings desde archivos .wav usando el modelo emotion2vec_base.
-    """
+    Extrae embeddings 768-D de emotion2vec_base mediante ModelScope Pipeline.
 
-    def __init__(self, model_name="emotion2vec/emotion2vec_base", device=None):
+    Uso:
+        extractor = Emotion2VecExtractor()
+        emb = extractor.extract("ruta/a/audio.wav")  # np.ndarray (768,)
+    """
+    def __init__(self,
+                 model_name: str = "iic/emotion2vec_base",
+                 device_id: int = 0):
+        # Inicializa el pipeline de reconocimiento de emoción
+        # extract_embedding=True puede no funcionar; usaremos feats en lugar
+        self.pipe = pipeline(
+            task=Tasks.emotion_recognition,
+            model=model_name,
+            device_id=device_id
+        )
+
+    def extract(self, audio_path: str) -> np.ndarray:
         """
-        Inicializa el modelo y asigna dispositivo.
+        Extrae un embedding de 768-D dado un archivo de audio.
 
         Args:
-            model_name (str): Ruta local o nombre Hugging Face del modelo.
-            device (str): "cuda" o "cpu". Por defecto detecta automaticamente.
-        """
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-
-        config = Wav2Vec2Config.from_pretrained(model_name)
-        self.model = Wav2Vec2Model.from_pretrained(model_name, config=config)
-        self.model.to(self.device)
-        self.model.eval()
-
-    def extract(self, audio_path):
-        """
-        Extrae el embedding promedio del archivo WAV.
-
-        Args:
-            audio_path (str): Ruta al archivo WAV (mono, 16 kHz)
-
+            audio_path: ruta al .wav de la utterance
         Returns:
-            torch.Tensor: Vector de embedding promedio
+            np.ndarray con shape (768,)
         """
-        waveform, sr = torchaudio.load(audio_path)
+        res = self.pipe(
+            audio_path,
+            granularity='utterance',
+            extract_embedding=True
+        )
 
-        if sr != 16000:
-            raise ValueError("El archivo debe tener una tasa de muestreo de 16 kHz")
+        # ModelScope puede devolver list o dict
+        if isinstance(res, list):
+            res = res[0]
 
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)  # convertir a mono
+        emb = None
+        # Claves candidatas
+        if isinstance(res, dict):
+            # 'feats' contiene a menudo la representación final
+            if 'feats' in res:
+                feats = res['feats']
+                # puede ser lista 2D o array; convertimos np.array
+                arr = np.array(feats, dtype=np.float32)
+                # si es temporal (ndim==2), hacemos mean pooling
+                if arr.ndim == 2:
+                    emb = arr.mean(axis=0)
+                else:
+                    emb = arr
+            # otras claves
+            for key in ('embeddings','embedding','utt_embedding','emotion_representation'):
+                if key in res:
+                    emb = np.array(res[key], dtype=np.float32)
+                    break
 
-        input_values = waveform.to(self.device)
+        if emb is None:
+            raise ValueError(f"No se encontró embedding. Claves disponibles: {list(res.keys())}")
 
-        with torch.no_grad():
-            outputs = self.model(input_values)
-        return outputs.last_hidden_state.mean(dim=1).squeeze()
+        return emb
+
+    def extract_batch(self, audio_paths: list) -> np.ndarray:
+        """
+        Extrae embeddings para un lote de archivos.
+
+        Args:
+            audio_paths: lista de rutas a archivos .wav
+        Returns:
+            np.ndarray con shape (B, 768)
+        """
+        embs = []
+        for p in audio_paths:
+            embs.append(self.extract(p))
+        return np.vstack(embs)
