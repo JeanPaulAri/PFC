@@ -1,4 +1,4 @@
-# 🎧 Análisis de Voz para visualizacion emocional
+# 🎧 Análisis de Voz para clasificacion de emociones
 
 ## 📌 Descripción general
 
