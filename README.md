@@ -13,15 +13,15 @@ Se procesan archivos de audio del dataset IEMOCAP y se generan embeddings `.npy`
 
 ## 📦 Repositorios y modelos utilizados
 
-- 🔗 Wav2Vec2 (Hugging Face): https://huggingface.co/facebook/wav2vec2-base-960h
-- 🔗 Emotion2Vec (GitHub): https://github.com/ddlBoJack/emotion2vec
-- 🔗 Emotion2Vec (Hugging Face): https://huggingface.co/emotion2vec/emotion2vec_base
+- 🔗 Wav2Vec2 (Hugging Face): <https://huggingface.co/facebook/wav2vec2-base-960h>
+- 🔗 Emotion2Vec (GitHub): <https://github.com/ddlBoJack/emotion2vec>
+- 🔗 Emotion2Vec (Hugging Face): <https://huggingface.co/emotion2vec/emotion2vec_base>
 
 ---
 
 ## 📂 Estructura del proyecto
 
-```
+```bash
 PFC/
 ├── config.py                        # Ruta a IEMOCAP_PATH
 ├── scripts/
@@ -41,6 +41,7 @@ PFC/
 ## ⚙️ Cómo ejecutar el proyecto
 
 1. **Clona este repositorio y crea entorno virtual**:
+
    ```bash
    git clone <este-repo>
    cd PFC
@@ -49,17 +50,20 @@ PFC/
    ```
 
 2. **Instala las dependencias**:
+
    ```bash
    pip install -r requirements.txt
    ```
 
 3. **Configura la ruta al dataset IEMOCAP**:
    Edita el archivo `config.py`:
+
    ```python
    IEMOCAP_PATH = "C:/ruta/a/IEMOCAP_full_release"
    ```
 
 4. **Ejecuta el script deseado**:
+
    ```bash
    python -m scripts.extract_wav2vec2_embeddings
    python -m scripts.extract_emotion2vec_embeddings

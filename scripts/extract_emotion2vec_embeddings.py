@@ -20,7 +20,7 @@ from tqdm import tqdm
 import soundfile as sf
 
 from utils.dataset_loader import load_iemocap_metadata
-from extractors.emotion2vec_extractor import Emotion2VecExtractor
+from extractors.emotion2vec_extractor import Emotion2VecExtractorLoacal as Emotion2VecExtractor
 
 OUTPUT_DIR = "embeddings/emotion2vec"
 
