@@ -3,11 +3,9 @@ import argparse
 from pathlib import Path
 import soundfile as sf
 import librosa
-import torch
 import numpy as np
 import joblib
-from extractors import Emotion2VecExtractor
-from transformers import Wav2Vec2Processor, Wav2Vec2ForSequenceClassification
+from extractors import Emotion2VecExtractor, Wav2Vec2Extractor
 import config
 from sklearn.metrics import (
     accuracy_score, recall_score, f1_score,
@@ -18,6 +16,9 @@ import json
 
 
 def infer_e2v(audio_path, model_paths):
+    """
+    Inferencia usando emotion2vec + clasificadores entrenados.
+    """
     extractor = Emotion2VecExtractor()
     emb = extractor.extract(audio_path).reshape(1, -1)
     prob_list = []
@@ -31,31 +32,27 @@ def infer_e2v(audio_path, model_paths):
     return classes[idx], avg_prob, classes
 
 
-def infer_w2v2(audio_path, checkpoint_dirs):
-    # Cargar processor del modelo base una sola vez
-    processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
+def infer_w2v2(audio_path, model_paths):
+    """
+    Inferencia usando embeddings de wav2vec2 + clasificadores entrenados.
+    """
+    # Leer y re-muestrear si es necesario
     speech, sr = sf.read(audio_path)
     if sr != config.SAMPLE_RATE:
         speech = librosa.resample(speech, orig_sr=sr, target_sr=config.SAMPLE_RATE)
-    sr = config.SAMPLE_RATE
-
+        sr = config.SAMPLE_RATE
+    # Extraer embedding
+    extractor = Wav2Vec2Extractor()
+    emb = extractor.extract(speech, sr).reshape(1, -1)
     prob_list = []
-    for ckpt in checkpoint_dirs:
-        # Carga modelo fine-tuned sólo pesos
-        model = Wav2Vec2ForSequenceClassification.from_pretrained(ckpt)
-        model.eval()
-
-        inputs = processor(speech, sampling_rate=sr, return_tensors="pt", padding=True)
-        with torch.no_grad():
-            logits = model(**inputs).logits
-            prob = torch.nn.functional.softmax(logits, dim=-1).cpu().numpy()[0]
-            prob_list.append(prob)
-
-    avg_prob = np.mean(prob_list, axis=0)
-    id2label = model.config.id2label
-    labels = [id2label[i] for i in range(len(avg_prob))]
+    for mp in model_paths:
+        clf = joblib.load(mp)
+        prob = clf.predict_proba(emb)
+        prob_list.append(prob)
+    avg_prob = np.mean(prob_list, axis=0)[0]
+    classes = clf.classes_
     idx = int(np.argmax(avg_prob))
-    return labels[idx], avg_prob, labels
+    return classes[idx], avg_prob, classes
 
 
 def plot_and_save_confusion(true_label, pred_label, classes, prefix, method):
@@ -96,16 +93,19 @@ def main():
     )
     args = parser.parse_args()
 
+    # Modelos entrenados guardados como pickles
     e2v_models = sorted(Path('models').glob('e2v_fold*.pkl'))
-    w2v2_ckpts = sorted(Path('ft_w2v2').glob('fold*/checkpoint-*'))
+    w2v2_models = sorted(Path('models').glob('w2v2_fold*.pkl'))
 
+    # Inferencias
     e2v_pred, e2v_prob, e2v_classes = infer_e2v(
         args.audio_path, [str(p) for p in e2v_models]
     )
     w2v2_pred, w2v2_prob, w2v2_classes = infer_w2v2(
-        args.audio_path, [str(p) for p in w2v2_ckpts]
+        args.audio_path, [str(p) for p in w2v2_models]
     )
 
+    # Mostrar resultados
     print("=== emotion2vec ===")
     print(f"Pred: {e2v_pred}")
     print("Probabilidades:")
@@ -118,27 +118,16 @@ def main():
     for lab, pr in zip(w2v2_classes, w2v2_prob.tolist()):
         print(f"  {lab}: {pr:.3f}")
 
+    # Si se proporciono etiqueta real, guardar metricas y matrices
     if args.label is not None:
         Path('plots').mkdir(exist_ok=True)
         prefix = 'inf_'
-        e2v_cm, e2v_cm_path = plot_and_save_confusion(
-            args.label, e2v_pred, e2v_classes, prefix, 'e2v'
-        )
-        w2v2_cm, w2v2_cm_path = plot_and_save_confusion(
-            args.label, w2v2_pred, w2v2_classes, prefix, 'w2v2'
-        )
-
-        e2v_met, e2v_met_path = save_metrics(
-            args.label, e2v_pred, e2v_classes, e2v_prob, prefix, 'e2v'
-        )
-        w2v2_met, w2v2_met_path = save_metrics(
-            args.label, w2v2_pred, w2v2_classes, w2v2_prob, prefix, 'w2v2'
-        )
-
-        print(f"Saved confusion matrices: {e2v_cm_path}, {w2v2_cm_path}")
-        print(f"Saved metrics JSON: {e2v_met_path}, {w2v2_met_path}")
+        plot_and_save_confusion(args.label, e2v_pred, e2v_classes, prefix, 'e2v')
+        plot_and_save_confusion(args.label, w2v2_pred, w2v2_classes, prefix, 'w2v2')
+        save_metrics(args.label, e2v_pred, e2v_classes, e2v_prob, prefix, 'e2v')
+        save_metrics(args.label, w2v2_pred, w2v2_classes, w2v2_prob, prefix, 'w2v2')
     else:
-        print("No se proporciono etiqueta real; solo se muestra prediccion y probabilidades.")
+        print("No se proporciono una etiqueta real; solo se muestra prediccion y probabilidades.")
 
 if __name__ == "__main__":
     main()
